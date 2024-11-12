@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -20,15 +21,19 @@ type TodoItem struct {
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
+func (TodoItem) TableName() string {
+	return "todo_items"
+}
+
 type TodoItemCreation struct {
 	Id          int    `json:"-" gorm:"column:id"`
 	Title       string `json:"title" gorm:"column:title"`
 	Description string `json:"description" gorm:"column:description"`
-	Status      string `json:"status" gorm:"column:status"`
+	//Status      string `json:"status" gorm:"column:status"`
 }
 
 func (TodoItemCreation) TableName() string {
-	return "todo_items"
+	return TodoItem{}.TableName()
 }
 
 func main() {
@@ -38,20 +43,6 @@ func main() {
 		log.Fatalln(err)
 	}
 	fmt.Println(db)
-
-	//init the loc
-	loc, _ := time.LoadLocation("Asia/Bangkok")
-
-	//set timezone,
-	now := time.Now().In(loc)
-	item := TodoItem{
-		Id:          1,
-		Title:       "This is task 1",
-		Description: "Task 1 description",
-		Status:      "Doing",
-		CreatedAt:   &now,
-		UpdatedAt:   &now,
-	}
 
 	r := gin.Default()
 	//	CRUD: Create, Read, Update, Delete
@@ -67,7 +58,7 @@ func main() {
 		{
 			items.POST("", CreateItem(db))
 			items.GET("")
-			items.GET("/:id")
+			items.GET("/:id", GetItem(db))
 			items.PATCH("/:id")
 			items.DELETE("/:id")
 		}
@@ -75,12 +66,28 @@ func main() {
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"message": item,
+			"message": "pong",
 		})
 	})
 	_ = r.Run(":8081") // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
 }
 
+// CreateItem returns a gin.HandlerFunc that creates a new todo item in the database.
+//
+// It takes a *gorm.DB as a parameter to perform database operations.
+//
+// The returned function handles the HTTP request to create a new todo item:
+//   - It binds the request body to a TodoItemCreation struct.
+//   - If binding fails, it returns a 400 Bad Request error.
+//   - It then attempts to create the item in the database.
+//   - If creation fails, it returns a 400 Bad Request error.
+//   - On success, it returns a 201 Created status with the new item's ID.
+//
+// Parameters:
+//   - db: A pointer to a gorm.DB instance for database operations.
+//
+// Returns:
+//   - A gin.HandlerFunc that can be used as a route handler in a Gin application.
 func CreateItem(db *gorm.DB) func(*gin.Context) {
 	return func(c *gin.Context) {
 		var data TodoItemCreation
@@ -101,6 +108,34 @@ func CreateItem(db *gorm.DB) func(*gin.Context) {
 
 		c.JSON(http.StatusCreated, gin.H{
 			"data": data.Id,
+		})
+	}
+}
+
+func GetItem(db *gorm.DB) func(*gin.Context) {
+	return func(c *gin.Context) {
+		var data TodoItem
+
+		id, err := strconv.Atoi(c.Param("id"))
+
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+
+			return
+		}
+
+		if err := db.Where("id = ?", id).First(&data).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+
+			return
+		}
+
+		c.JSON(http.StatusCreated, gin.H{
+			"data": data,
 		})
 	}
 }
